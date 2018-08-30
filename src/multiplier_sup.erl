@@ -8,5 +8,17 @@ start_link() ->
 	supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 init([]) ->
-	Procs = [],
-	{ok, {{one_for_one, 1, 5}, Procs}}.
+	Specs = #{
+              strategy => simple_one_for_one,
+              intensity => 100,
+              period => 1
+            },
+	Childrens = [
+                   #{id => multiplier,
+                   start => {multiplier_srv, start_link, []},
+                   restart => transient,
+                   shutdown => 5,
+                   type => worker,
+                   modules => [multiplier_srv]}
+                ],
+	{ok, {Specs, Childrens}}.

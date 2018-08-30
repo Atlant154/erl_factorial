@@ -8,5 +8,26 @@ start_link() ->
 	supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 init([]) ->
-	Procs = [],
-	{ok, {{one_for_one, 1, 5}, Procs}}.
+	Specs = #{
+               %% One down -> all restart.		
+               strategy => one_for_all,
+			   %% It can be restarted a thousand times per second.
+			   intensity => 1000,
+			   period => 1
+             },
+	Childrens = [
+                  #{id => postman,
+                  start => {postman_srv, start_link, []},
+                  restart => permanent,
+                  shutdown => infinity,
+                  type => worker,
+                  modules => [postman_srv]},
+
+    			  #{id => multiplier_sup,
+                  start => {multiplier_sup, start_link, []},
+                  restart => permanent,
+                  shutdown => infinity,
+                  type => supervisor,
+                  modules => [multiplier_sup]}
+                ],
+	{ok, {Specs, Childrens}}.
