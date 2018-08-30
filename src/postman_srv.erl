@@ -1,10 +1,12 @@
 -module(postman_srv).
 -behaviour(gen_server).
 
-%% API.
--export([start_link/0]).
+-include_lib("amqp_client/include/amqp_client.hrl").
 
-%% gen_server.
+%% API export:
+-export([start_link/2]).
+
+%% Generic server export:
 -export([init/1]).
 -export([handle_call/3]).
 -export([handle_cast/2]).
@@ -13,18 +15,22 @@
 -export([code_change/3]).
 
 -record(state, {
-}).
+                 node_queue :: binary(),
+				 channel :: pid()
+               }).
 
-%% API.
+%% API:
 
--spec start_link() -> {ok, pid()}.
-start_link() ->
-	gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+-spec start_link(binary(), pid()) -> {ok, pid()}.
+start_link(Queue, Channel) ->
+	gen_server:start_link({local, ?MODULE}, ?MODULE, [Queue, Channel], []).
 
-%% gen_server.
+%% Generic server:
 
-init([]) ->
-	{ok, #state{}}.
+init([Queue, Channel]) ->
+    lager:info("Postman server inicialization on node ~p started.", [node()]),
+	amqp_channel:subscribe(Channel, #'basic.consume'{queue = Queue, no_ack = false}, self()),
+    {ok, #state{node_queue = Queue, channel = Channel}}.
 
 handle_call(_Request, _From, State) ->
 	{reply, ignored, State}.

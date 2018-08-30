@@ -11,7 +11,8 @@ dep_lager = hex 3.6.4
 dep_amqp_client = hex 3.7.7
 
 ETC_DIR ?= etc
-SHELL_ERL = erl -name $(PROJECT) -eval 'application:ensure_all_started($(PROJECT))'
+CONFIGS = $(foreach config, $(wildcard $(ETC_DIR)/*.config), -config $(config))
+SHELL_ERL = erl -name $(PROJECT) $(CONFIGS) -args_file $(ETC_DIR)/vm.args -eval 'application:ensure_all_started($(PROJECT))'
 
 
 include erlang.mk

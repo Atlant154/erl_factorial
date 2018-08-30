@@ -1,10 +1,10 @@
 -module(multiplier_srv).
 -behaviour(gen_server).
 
-%% API.
+%% API export:
 -export([start_link/0]).
 
-%% gen_server.
+%% Generic server export:
 -export([init/1]).
 -export([handle_call/3]).
 -export([handle_cast/2]).
@@ -12,16 +12,15 @@
 -export([terminate/2]).
 -export([code_change/3]).
 
--record(state, {
-}).
+-record(state, {}).
 
-%% API.
+%% API:
 
 -spec start_link() -> {ok, pid()}.
 start_link() ->
 	gen_server:start_link(?MODULE, [], []).
 
-%% gen_server.
+%% Generic server:
 
 init([]) ->
 	{ok, #state{}}.

@@ -1,23 +1,21 @@
 -module(erl_factorial_sup).
 -behaviour(supervisor).
 
--export([start_link/0]).
+-export([start_link/1]).
 -export([init/1]).
 
-start_link() ->
-	supervisor:start_link({local, ?MODULE}, ?MODULE, []).
+start_link([Queue, Channel]) ->
+	supervisor:start_link({local, ?MODULE}, ?MODULE, [Queue, Channel]).
 
-init([]) ->
-	Specs = #{
-               %% One down -> all restart.		
-               strategy => one_for_all,
-			   %% It can be restarted a thousand times per second.
-			   intensity => 1000,
-			   period => 1
-             },
+init([Queue, Channel]) ->
+	Specs = #{%% One down -> all restart.		
+            strategy => one_for_all,
+            %% It can be restarted a thousand times per second.
+            intensity => 1000,
+            period => 1},
 	Childrens = [
                   #{id => postman,
-                  start => {postman_srv, start_link, []},
+                  start => {postman_srv, start_link, [Queue, Channel]},
                   restart => permanent,
                   shutdown => infinity,
                   type => worker,
@@ -29,5 +27,5 @@ init([]) ->
                   shutdown => infinity,
                   type => supervisor,
                   modules => [multiplier_sup]}
-                ],
+              ],
 	{ok, {Specs, Childrens}}.
