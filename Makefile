@@ -5,10 +5,11 @@ ROJECT_MOD = erl_factorial_app
 
 ERLC_OPTS += +'{parse_transform, lager_transform}'
 
-DEPS = lager amqp_client
+DEPS = lager amqp_client jsone
 
 dep_lager = hex 3.6.4
 dep_amqp_client = hex 3.7.7
+dep_jsone = hex 1.4.7
 
 ETC_DIR ?= etc
 CONFIGS = $(foreach config, $(wildcard $(ETC_DIR)/*.config), -config $(config))
