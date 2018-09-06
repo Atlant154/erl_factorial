@@ -2,12 +2,13 @@
 -behaviour(gen_server).
 
 -include_lib("amqp_client/include/amqp_client.hrl").
+-include_lib("erl_factorial/include/erl_fact_messages.hrl").
 
-%% API.
+%% API export:
 -export([start_link/5]).
 -export([get_cluster_members_map/0]).
 
-%% gen_server.
+%% Generic server export:
 -export([init/1]).
 -export([handle_call/3]).
 -export([handle_cast/2]).
@@ -32,20 +33,20 @@
 %% API.
 
 -spec start_link(binary(), binary(), binary(), pid(), binary()) -> {ok, pid()}.
-start_link(StateQueueName, ClusterExchange, ClusterRouteKey, Channel, Node) ->
-	gen_server:start_link({local, ?MODULE}, ?MODULE, [StateQueueName, ClusterExchange, ClusterRouteKey, Channel, Node], []).
+start_link(StateQueueName, ClusterExchange, ClusterRoutingKey, Channel, Node) ->
+	gen_server:start_link({local, ?MODULE}, ?MODULE, [StateQueueName, ClusterExchange, ClusterRoutingKey, Channel, Node], []).
 
-%% gen_server.
+%% Generic server:
 
-init([StateQueueName, ClusterExchange, ClusterRouteKey, Channel, Node]) ->
+init([StateQueueName, ClusterExchange, ClusterRoutingKey, Channel, Node]) ->
 	amqp_channel:subscribe(Channel, #'basic.consume'{queue = StateQueueName, no_ack = true}, self()),
-	request_cluster_members(Channel, ClusterExchange, ClusterRouteKey, Node),
-	erlang:send_after(?INTERVAL, self(), time_to_update),
+	request_cluster_members(Channel, ClusterExchange, ClusterRoutingKey, Node),
+	timer:send_interval(?INTERVAL, time_to_update),
 	{ok, #state{exchange = ClusterExchange, 
 				channel = Channel,
 				queue = StateQueueName,
 				cores = erlang:integer_to_binary(erlang:system_info(schedulers_online)),
-				routing_key = ClusterRouteKey,
+				routing_key = ClusterRoutingKey,
 				node = Node,
 				cluster_members = #{Node => erlang:system_info(schedulers_online)}}}.
 
@@ -62,39 +63,27 @@ handle_cast(Message, State) ->
 
 handle_info(time_to_update, State = #state{}) ->
 	request_cluster_members(State#state.channel, State#state.exchange, State#state.routing_key, State#state.node),
-	erlang:send_after(?INTERVAL, self(), time_to_update),
 	{noreply, State};
 
 handle_info(#'basic.consume_ok'{}, State) ->
 	lager:info("Node subscribed to the queue."),
 	{noreply, State};
 
-handle_info({#'basic.deliver'{}, #amqp_msg{payload = Body}}, State = #state{}) ->
-	Message = jsone:decode(Body),
-	case Message of
-		#{<<"header">> := ?CORES_REQ, <<"request_node">> := RequestNode} ->
-			case RequestNode =/= State#state.node of
+handle_info({#'basic.deliver'{}, #amqp_msg{payload = MessageBody}}, State = #state{}) ->
+	case erlang:binary_to_term(MessageBody) of
+		#fact_cluster_msg{header = ?CORES_REQ, node = ResponseNode} ->
+			case ResponseNode =/= State#state.node of
 				true ->
-					Response = jsone:encode(#{<<"header">> => ?CORES_RESP, <<"node">> => State#state.node, <<"cores">> => State#state.cores}),
-					amqp_channel:cast(State#state.channel,
-                    				  #'basic.publish'{exchange = State#state.exchange,
-													   routing_key = Body},
-                    								   #amqp_msg{payload = Response}),
-					lager:debug("Get number of cores request. Node: ~p.", [RequestNode]);
-				false ->
-					ok
+					request_cluster_members(State#state.channel, State#state.exchange,
+											State#state.routing_key, State#state.node),
+					lager:debug("Received number of cores request. Node: ~p.", [ResponseNode]);
+				false -> ok
 			end,
 			{noreply, State};
-		#{<<"header">> := ?CORES_RESP, <<"node">> := ClusterMember, <<"cores">> := NumberOfCores} ->
-			case ClusterMember =/= State#state.node of
-				true ->
-					ClusterMembers = maps:put(ClusterMember, NumberOfCores, State#state.cluster_members),
-					lager:info("Map of cluster members upadted. New map: ~p", ClusterMembers),
-					{noreply, State#state{cluster_members = ClusterMembers}};
-				false ->
-					lager:info("Map of cluster members: ~p", [State#state.cluster_members]),
-					{noreply, State}
-			end;
+		#fact_cluster_msg{header = ?CORES_RESP, node = ClusterMember, cores = NumberOfCores} ->
+			ClusterMembers = maps:put(ClusterMember, NumberOfCores, State#state.cluster_members),
+			lager:info("Map of cluster members upadted. New map: ~p", ClusterMembers),
+			{noreply, State#state{cluster_members = ClusterMembers}};
 		Else ->
 			lager:warning("Unhandled message from RabbitMQ: ~p", [Else]),
 			{noreply, State}
@@ -116,8 +105,7 @@ get_cluster_members_map() ->
 
 -spec request_cluster_members(pid(), binary(), binary(), binary()) -> ok.
 request_cluster_members(Channel, Exchange, RoutingKey, Node) ->
-	ClusterMemberReq = jsone:encode(#{header => ?CORES_REQ, request_node => Node}),
+	ClusterMembersReq = erlang:term_to_binary(#fact_cluster_msg{header = ?CORES_REQ, node = Node}),
 	amqp_channel:cast(Channel,
                       #'basic.publish'{exchange = Exchange, routing_key = RoutingKey},
-                      #amqp_msg{payload = ClusterMemberReq}),
-	ok.
+                      #amqp_msg{payload = ClusterMembersReq}).

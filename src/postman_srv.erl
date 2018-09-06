@@ -2,6 +2,7 @@
 -behaviour(gen_server).
 
 -include_lib("amqp_client/include/amqp_client.hrl").
+-include_lib("erl_factorial/include/erl_fact_messages.hrl").
 
 %% API export:
 -export([start_link/2]).
@@ -20,8 +21,7 @@
 				 cores = erlang:system_info(schedulers_online) :: integer()
                }).
 
-
--define(RESP, <<"result_response">>).
+-define(RESULT_RESPONSE, <<"result_response">>).
 
 %% API:
 
@@ -41,7 +41,7 @@ handle_call(Request, From, State) ->
 	lager:warning("Unhandled call. Request: ~p. From: ~p.", [Request, From]),
 	{reply, ignored, State}.
 
-handle_cast({factorial, N, ResponcePid}, State = #state{}) ->
+handle_cast({factorial, N, _ResponcePid}, State = #state{}) ->
 	lager:warning("Node received request to calculate the factorial(N), N: ~p.", [N]),
 	ClusterMembersMap = cluster_message_handler_srv:get_cluster_members_map(),
 	Cores = lists:sum(maps:values(ClusterMembersMap)),
@@ -57,11 +57,10 @@ handle_info(#'basic.consume_ok'{}, State) ->
 	lager:info("Node subscribed to the queue."),
 	{noreply, State};
 
-handle_info({#'basic.deliver'{}, #amqp_msg{payload = Body}}, State = #state{}) ->
-	Message = jsone:decode(Body),
-	case Message of
-		#{<<"header">> := ?RESP} ->
-			lager:warning("Get result message. Body: ~p", [Message]);
+handle_info({#'basic.deliver'{}, #amqp_msg{payload = Message}}, State = #state{}) ->
+	case erlang:binary_to_term(Message) of
+		#fact_calc_msg{header = ?RESULT_RESPONSE, id = ID, node = Node, result = Result} ->
+			lager:warning("Received result message. CalculationID = ~p, from node ~p, calculation result = ~p.", [ID, Node, Result]);
 		_Else ->
 			lager:warning("Unhandled info message: ~p", [Message])
 	end,
@@ -88,19 +87,3 @@ factorial(N) when is_integer(N) andalso N > 0 ->
 	after 6000 ->
 		lager:warning("Result not received.")
 	end.
-
-%% WIP.
-% -spec get_calculations_map(integer(), map(), integer()) -> map().
-% get_calculations_map(N, ClusterMemberMap, ClusterCores) ->
-	
-% 	NumOfThreads = case ClusterCores > N div 2 + n rem 2 of
-% 		true -> N div 2;
-% 		false -> ClusterCores
-% 	end,
-% 	get_task_distribution_map(start, maps:new(), ClusterMemberMap, NumOfThreads).
-
-
-% get_task_distribution_map(none, CalculationsMap, _ClusterMemberMap, _NumOfThreads) ->
-% 	CalculationsMap;
-% get_task_distribution_map(ClusterMembers, CalculationsMap, ClusterMemberMap, NumOfThreads) ->
-	
